@@ -10,7 +10,8 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
-	state       parseState
+
+	state parseState
 }
 
 type RequestLine struct {
@@ -30,62 +31,37 @@ const crlf = "\r\n"
 const bufferSize = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	r := &Request{state: stateInitialised}
-
-	buf := make([]byte, bufferSize)
+	buf := make([]byte, bufferSize, bufferSize)
 	readToIndex := 0
-
-	for r.state != stateDone {
-		if readToIndex == len(buf) {
+	req := &Request{
+		state: stateInitialised,
+	}
+	for req.state != stateDone {
+		if readToIndex >= len(buf) {
 			newBuf := make([]byte, len(buf)*2)
-			copy(newBuf, buf[:readToIndex])
+			copy(newBuf, buf)
 			buf = newBuf
 		}
 
-		nRead, err := reader.Read(buf[readToIndex:])
-		if err == io.EOF && nRead == 0 {
-			// no more data; let parser decide if done
-		} else if err != nil && err != io.EOF {
+		numBytesRead, err := reader.Read(buf[readToIndex:])
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				req.state = stateDone
+				break
+			}
 			return nil, err
 		}
-		readToIndex += nRead
+		readToIndex += numBytesRead
 
-		nParsed, perr := r.parse(buf[:readToIndex])
-		if perr != nil {
-			return nil, perr
-		}
-
-		if nParsed > 0 {
-			copy(buf, buf[nParsed:readToIndex])
-			readToIndex -= nParsed
-		}
-
-		if err == io.EOF && nRead == 0 {
-			break
-		}
-	}
-
-	return r, nil
-}
-
-func (r *Request) parse(data []byte) (int, error) {
-	switch r.state {
-	case stateInitialised:
-		n, rl, err := parseRequestLine(data)
+		numBytesParsed, err := req.parse(buf[:readToIndex])
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		if n == 0 {
-			return 0, nil
-		}
-		r.RequestLine = *rl
-		r.state = stateDone
-		return n, nil
-	case stateDone:
-		return 0, fmt.Errorf("parser in done state")
-	default:
-		return 0, fmt.Errorf("unknown state")
+
+		copy(buf, buf[numBytesParsed:])
+		readToIndex -= numBytesParsed
 	}
+	return req, nil
 }
 
 func parseRequestLine(data []byte) (int, *RequestLine, error) {
@@ -138,4 +114,24 @@ func requestLineFromString(str string) (*RequestLine, error) {
 	r.HttpVersion = parts[1]
 
 	return &r, nil
+}
+
+func (r *Request) parse(data []byte) (int, error) {
+	switch r.state {
+	case stateInitialised:
+		n, rl, err := parseRequestLine(data)
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, nil
+		}
+		r.RequestLine = *rl
+		r.state = stateDone
+		return n, nil
+	case stateDone:
+		return 0, fmt.Errorf("parser in done state")
+	default:
+		return 0, fmt.Errorf("unknown state")
+	}
 }
