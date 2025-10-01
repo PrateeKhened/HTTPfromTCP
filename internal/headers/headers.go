@@ -2,12 +2,16 @@ package headers
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 )
 
 type Headers map[string]string
 
 const crlf = "\r\n"
+const validChars = "^[A-Za-z0-9!#$%&'*+\\-\\.\\^_`|~]+$"
+
+var re = regexp.MustCompile(validChars)
 
 func NewHeaders() Headers {
 	return map[string]string{}
@@ -43,7 +47,13 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, errors.New("invalid key")
 	}
 
-	h.Set(key, value)
+	if !re.MatchString(key) {
+		return 0, false, errors.New("invalid character/s in the key")
+	}
+
+	lowerKey := strings.ToLower(key)
+
+	h.Set(lowerKey, value)
 
 	return i + 2, false, nil
 }
