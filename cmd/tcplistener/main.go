@@ -21,7 +21,8 @@ func main() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Fatalf("error: %s\n", err.Error())
+			log.Printf("error: %s\n", err.Error())
+			continue
 		}
 		fmt.Println("Accepted connection from", conn.RemoteAddr())
 
